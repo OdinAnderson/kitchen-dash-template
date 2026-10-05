@@ -3,8 +3,9 @@
 // Microsoft Graph access for the kitchen dashboard.
 //
 // One credential, one call, read-only. The app registration behind CLIENT_ID holds a
-// single application permission (Calendars.Read), confined to a single mailbox by an
-// Exchange ApplicationAccessPolicy. Nothing here writes, and no other resource is read.
+// single permission (Calendars.Read), granted through Exchange Online RBAC for
+// Applications and scoped to one mailbox. Nothing here writes, and no other resource
+// is read.
 //
 // The secret arrives from the service's environment file at runtime. It is never
 // logged, never returned in a response, and never written to disk.

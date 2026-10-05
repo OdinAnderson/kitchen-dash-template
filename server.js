@@ -157,60 +157,134 @@ async function handleAir(req, res, url) {
   }
 }
 
-function serveStatic(req, res, url) {
-  // Strip any mount prefix Tailscale Serve adds, then resolve inside ROOT and verify
-  // the result really is inside ROOT — a path check done after normalisation, so
-  // encoded traversal cannot escape.
-  let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-  if (rel === '' || rel.endsWith('/')) rel += 'index.html';
+// Static files are served from an explicit ALLOWLIST, not from the whole directory.
+// The clone also holds .git/, README, package files, deploy/ and api/ source; none of
+// that is UI and none of it should be reachable over the network. Anything not
+// listed here is a 404 — including dotfiles (.env*, .git), which are additionally
+// rejected by segment before the allowlist is even consulted.
+//
+// CUSTOMIZE: if you add a UI file that index.html loads, add it here.
+const STATIC_FILES = new Set([
+  'index.html',
+  'diag.html',            // standalone render diagnostic for kiosk WebViews
+  'app.js',
+  'data.js',
+  'weather.js',
+  'location.js',
+  'location-ui.js',
+  'style.css',
+  'styles-location.css',
+  'favicon.svg',
+  'manifest.json',
+]);
+// Directories served one level deep, restricted by extension.
+const STATIC_DIRS = new Map([
+  ['icons', new Set(['.png'])],
+  ['weather-icons', new Set(['.svg'])],
+]);
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-  const full = path.resolve(ROOT, rel);
-  if (full !== ROOT && !full.startsWith(ROOT + path.sep)) {
-    res.writeHead(403).end('Forbidden');
-    return;
+/**
+ * Map a request pathname to an absolute file path, or null if it must not be served.
+ * Pure (no I/O), so it can be unit-tested.
+ */
+function resolveStaticPath(pathname, root = ROOT) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null; // malformed percent-encoding
   }
+  if (decoded.includes('\0') || decoded.includes('\\')) return null;
+
+  let rel = decoded.replace(/^\/+/, '');
+  if (rel === '') rel = 'index.html';
+
+  const segments = rel.split('/');
+  // No empty, '.', '..' or dot-prefixed segments anywhere: blocks traversal and every
+  // dotfile/dot-directory (.git, .env, .env.example, …) regardless of the allowlist.
+  if (segments.some((seg) => seg === '' || seg.startsWith('.'))) return null;
+
+  let allowed = false;
+  if (segments.length === 1) {
+    allowed = STATIC_FILES.has(segments[0]);
+  } else if (segments.length === 2) {
+    const exts = STATIC_DIRS.get(segments[0]);
+    allowed = !!exts && SAFE_NAME.test(segments[1]) &&
+      exts.has(path.extname(segments[1]).toLowerCase());
+  }
+  if (!allowed) return null;
+
+  // Belt and braces: normalise and confirm the result is still inside root.
+  const full = path.resolve(root, ...segments);
+  if (!full.startsWith(path.resolve(root) + path.sep)) return null;
+  return full;
+}
+
+function notFound(res) {
+  res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+}
+
+function serveStatic(req, res, url) {
+  // Tailscale Serve strips its --set-path mount prefix before proxying, so the path
+  // here is relative to the app root.
+  const full = resolveStaticPath(url.pathname);
+  if (!full) return notFound(res);
 
   fs.readFile(full, (err, buf) => {
-    if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
-      return;
-    }
+    if (err) return notFound(res);
     res.writeHead(200, {
       'Content-Type': TYPES[path.extname(full).toLowerCase()] || 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
       // The UI is versioned by query string in index.html; a short cache keeps a
       // kiosk reload cheap without pinning stale code for long.
       'Cache-Control': 'public, max-age=300',
     });
-    res.end(buf);
+    res.end(req.method === 'HEAD' ? undefined : buf);
   });
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+function createServer() {
+  return http.createServer((req, res) => {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      res.writeHead(400).end();
+      return;
+    }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { Allow: 'GET, HEAD' }).end();
-    return;
-  }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' }).end();
+      return;
+    }
 
-  // Matched by suffix so the app works under any mount path Serve gives it.
-  if (url.pathname.endsWith('/api/state')) return handleState(req, res, url);
-  if (url.pathname.endsWith('/api/air')) return handleAir(req, res, url);
-  if (url.pathname.endsWith('/healthz')) {
-    res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
-    return;
-  }
+    // Matched by suffix so the app works under any mount path Serve gives it.
+    if (url.pathname.endsWith('/api/state')) return handleState(req, res, url);
+    if (url.pathname.endsWith('/api/air')) return handleAir(req, res, url);
+    if (url.pathname.endsWith('/healthz')) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+      return;
+    }
 
-  serveStatic(req, res, url);
-});
-
-server.listen(PORT, HOST, () => {
-  console.log(`kitchen-dash listening on http://${HOST}:${PORT} (loopback only)`);
-  console.log(`  calendar: ${process.env.CALENDAR_MAILBOX || '(CALENDAR_MAILBOX unset)'}`);
-  // Presence only — never the value.
-  console.log(`  air:      ${process.env.WAQI_TOKEN ? 'WAQI token set' : '(WAQI_TOKEN unset — AQI disabled)'}`);
-});
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => server.close(() => process.exit(0)));
+    serveStatic(req, res, url);
+  });
 }
+
+// Listen only when run directly (`node server.js`); tests require() this module and
+// start their own instance on an ephemeral port.
+if (require.main === module) {
+  const server = createServer();
+  server.listen(PORT, HOST, () => {
+    console.log(`kitchen-dash listening on http://${HOST}:${PORT} (loopback only)`);
+    console.log(`  calendar: ${process.env.CALENDAR_MAILBOX || '(CALENDAR_MAILBOX unset)'}`);
+    // Presence only — never the value.
+    console.log(`  air:      ${process.env.WAQI_TOKEN ? 'WAQI token set' : '(WAQI_TOKEN unset — AQI disabled)'}`);
+  });
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => server.close(() => process.exit(0)));
+  }
+}
+
+module.exports = { createServer, resolveStaticPath, STATIC_FILES, STATIC_DIRS };

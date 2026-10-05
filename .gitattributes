@@ -1,0 +1,3 @@
+# Keep LF everywhere: bootstrap.sh and the systemd unit break with CRLF on Linux.
+* text=auto eol=lf
+*.png binary

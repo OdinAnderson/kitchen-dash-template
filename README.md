@@ -37,12 +37,12 @@ mailboxes, hostnames, paths, coordinates — is a placeholder. Fill in your own.
   location-ui.js          the city picker
   weather.js              Open-Meteo, client-side
   diag.html               render diagnostic for older kiosk WebViews
-server.js               the whole backend: static files + /api/state + /api/air
+server.js               the whole backend: allowlisted static files + /api/state + /api/air
 api/
   src/lib/graph.js        token + calendarView, the only code holding the Graph secret
   src/lib/calendar.js     shaping: day buckets, countdowns
   src/lib/air.js          WAQI station lookup, holds WAQI_TOKEN
-  test/                   unit tests, no credentials or network needed
+  test/                   unit + server tests, no credentials or network needed
 deploy/kitchen-dash.service   systemd user unit (placeholder paths)
 bootstrap.sh            one-shot host setup
 .env.example            the configuration template
@@ -53,59 +53,81 @@ bootstrap.sh            one-shot host setup
 ### 1. Microsoft Graph: app-only, least privilege
 
 The dashboard reads **one mailbox's calendar** with an app-only (client credentials)
-registration. Application permissions are tenant-wide by default, so the scoping is done
-in Exchange Online.
+registration. A Graph application permission consented in Entra ID is tenant-wide, so
+the recommended path grants the permission **in Exchange Online instead**, using
+[RBAC for Applications](https://learn.microsoft.com/exchange/permissions-exo/application-rbac),
+with a management scope that matches only the calendar mailbox.
 
 1. **Create a mailbox for the calendar.** A *shared mailbox* (e.g. `calendar@example.com`)
    works best — see [Why a mailbox calendar, not a group calendar](#why-a-mailbox-calendar-not-a-group-calendar).
    Share it with the people who should edit events.
-2. **Register an app** in Entra ID (single tenant). Add the Microsoft Graph
-   **Application** permission `Calendars.Read` — nothing else — and grant admin consent.
-   Create a client secret and note the expiry.
-3. **Confine it to that one mailbox** with an Exchange `ApplicationAccessPolicy`
-   (or the newer RBAC for Applications) in Exchange Online PowerShell:
+2. **Register an app** in Entra ID (single tenant) and create a client secret (note the
+   expiry). **Do not** add or admin-consent any Microsoft Graph *application*
+   permissions on it — Entra grants are unscoped and are **added** to the Exchange grant,
+   so a consented `Calendars.Read` would let the app read every calendar in the tenant
+   no matter how narrow the scope below is. If you are converting an existing app, remove
+   that consent.
+3. **Grant `Calendars.Read`, scoped to the one mailbox**, in Exchange Online PowerShell
+   (requires Organization Management in Exchange / Exchange Administrator in Entra).
+   Take both IDs from **Enterprise applications** (the service principal), not App
+   registrations — the object IDs differ:
 
    ```powershell
    $APP_ID = "00000000-0000-0000-0000-000000000000"   # Application (client) ID
+   $SP_OID = "11111111-1111-1111-1111-111111111111"   # Enterprise app (service principal) object ID
    $CAL    = "calendar@example.com"                   # the calendar mailbox
 
    Connect-ExchangeOnline
-   # A mail-enabled security group containing only the calendar mailbox:
-   New-DistributionGroup -Name "Kitchen Dashboard Scope" -Type Security -Members $CAL
-   New-ApplicationAccessPolicy -AppId $APP_ID -PolicyScopeGroupId "Kitchen Dashboard Scope" `
-     -AccessRight RestrictAccess -Description "Kitchen dashboard: one calendar only"
+
+   # 1. Exchange's pointer to the Entra service principal
+   New-ServicePrincipal -AppId $APP_ID -ObjectId $SP_OID -DisplayName "Kitchen Dashboard (read-only)"
+
+   # 2. A resource scope matching exactly one recipient: the calendar mailbox
+   New-ManagementScope -Name "Kitchen Dashboard Scope" `
+     -RecipientRestrictionFilter "PrimarySmtpAddress -eq '$CAL'"
+
+   # 3. The scoped grant. Read-only: the dashboard never writes.
+   New-ManagementRoleAssignment -App $SP_OID -Role "Application Calendars.Read" `
+     -CustomResourceScope "Kitchen Dashboard Scope"
    ```
+
+   Use `Application Calendars.ReadWrite` only if you build something that writes events
+   (for example an automation that adds countdown markers) — and give that its **own**
+   app registration and scope rather than widening the dashboard's read-only credential.
 
 4. **Verify the scope — both directions.** Never check only the mailbox that should work;
    a broken intermediate state can pass a positive-only test while the credential can
-   still read the whole tenant:
+   still read far more than intended:
 
    ```powershell
-   Test-ApplicationAccessPolicy -Identity calendar@example.com -AppId $APP_ID   # Granted
-   Test-ApplicationAccessPolicy -Identity someone@example.com  -AppId $APP_ID   # Denied
+   Test-ServicePrincipalAuthorization -Identity $APP_ID -Resource $CAL                    # InScope: True
+   Test-ServicePrincipalAuthorization -Identity $APP_ID -Resource someone@example.com    # InScope: False
    ```
 
-   *Alternative:* Exchange **RBAC for Applications** (a management scope over the
-   mailbox plus a `New-ManagementRoleAssignment` of `Application Calendars.Read` to the
-   service principal) does the same job; verify it with
-   `Test-ServicePrincipalAuthorization -Identity $APP_ID -Resource calendar@example.com`
-   (expect `InScope: True`) and again against a mailbox that must be denied.
+   Also confirm in Entra (Enterprise applications → the app → **Permissions**) that no
+   Graph application permissions are consented: `Test-ServicePrincipalAuthorization`
+   only evaluates Exchange RBAC grants, not Entra ones.
+
    `Test-ServicePrincipalAuthorization` bypasses the permission cache, so it reflects
-   configuration immediately.
+   configuration immediately. Actual Graph enforcement lags by **30 minutes to 2 hours**
+   for an active app — during that window a live request proves nothing either way.
 
-   Policy changes can take **30 minutes to 2 hours** to reach actual Graph enforcement
-   for an active app — during that window a stale result proves nothing either way.
+   *Legacy alternative:* Exchange `ApplicationAccessPolicy` (Entra-consented
+   `Calendars.Read` restricted to a mail-enabled security group, checked with
+   `Test-ApplicationAccessPolicy`) also works, but Microsoft now positions RBAC for
+   Applications as its replacement. Don't combine the two for the same permission.
 
-Placeholder reference — replace with your own values and keep them out of commits if you
-prefer (none of these are secrets, but they identify your tenant):
+Placeholder reference — replace with your own values (none of these are secrets, but
+they identify your tenant, so you may prefer to keep them out of commits):
 
 | Thing | Example value |
 |---|---|
 | Tenant ID | `00000000-0000-0000-0000-000000000000` |
-| App (client) ID — read-only registration | `11111111-1111-1111-1111-111111111111` |
+| App (client) ID — read-only registration | `00000000-0000-0000-0000-000000000000` |
+| Service principal object ID (Enterprise app) | `11111111-1111-1111-1111-111111111111` |
 | Calendar mailbox | `calendar@example.com` |
-| Exchange scope group | `Kitchen Dashboard Scope` |
-| Microsoft Graph resource (well-known) | `00000003-0000-0000-c000-000000000000` |
+| Exchange management scope | `Kitchen Dashboard Scope` |
+| Exchange application role | `Application Calendars.Read` |
 
 ### 2. Air quality token (optional)
 
@@ -187,6 +209,9 @@ Any other reverse proxy works too; just don't expose port 8788 directly to the i
 - **Daily checklist** — edit the `<li>` items in `index.html` (`data-dow` limits an item
   to one weekday; ticks reset daily at ~2am).
 - **Event emoji** — keyword → emoji table at the top of `app.js`.
+- **New UI files** — `server.js` serves only an explicit allowlist (`STATIC_FILES` /
+  `STATIC_DIRS`); add any new file that `index.html` loads there. A test fails if
+  `index.html` or `manifest.json` references something not on the list.
 
 Migrating events from an existing calendar into the new mailbox is out of scope for this
 template.
@@ -343,3 +368,8 @@ Runs without credentials or network — the shaping layer is pure.
   (it logs only whether `WAQI_TOKEN` is set).
 - The server listens on `127.0.0.1` only; put an authenticating proxy or a private
   network (e.g. a tailnet) in front of it.
+- Static files come from an **allowlist** of UI files (`index.html`, its JS/CSS, the
+  manifest, `icons/*.png`, `weather-icons/*.svg`, and `diag.html`). Everything else in the
+  clone — `.git/`, `.env*`, `README.md`, `api/`, `deploy/`, package files — is a 404, any
+  dot-prefixed path segment is rejected, and traversal (`..`, encoded or not) cannot leave
+  the app directory. `api/test/server.test.js` checks all of this against a live instance.
