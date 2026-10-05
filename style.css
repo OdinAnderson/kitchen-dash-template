@@ -1,0 +1,693 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #101318;
+  color: #f2f4f8;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  padding: 4px 10px 6px;
+  gap: 6px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 6px;
+}
+
+.today,
+.week {
+  background: #181c24;
+  border-radius: 10px;
+  padding: 6px 10px 6px;
+}
+
+.weather,
+.checklist {
+  background: #181c24;
+  border-radius: 10px;
+  padding: 12px 14px 10px;
+  min-height: 200px;
+}
+
+.countdowns {
+  background: #181c24;
+  border-radius: 10px;
+  padding: 6px 10px 0;
+}
+
+.today-title,
+.week-title {
+  font-size: 2.1rem;
+  font-weight: 600;
+  margin-top: 2px;
+  margin-bottom: 6px;
+}
+
+.today-events {
+  list-style: none;
+  font-size: 1.4rem;
+}
+
+.today-events li {
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 1em;
+}
+
+.today-events .time {
+  display: inline-block;
+  width: 4.5em;
+  margin-right: 0.5em;
+  opacity: 0.9;
+}
+
+.week-list {
+  list-style: none;
+  font-size: 1.3rem;
+}
+
+.week-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 0 4px;
+  margin-top: 2px;
+}
+
+.week-list .dow {
+  min-width: 7em;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.week-list .label {
+  white-space: nowrap;
+}
+
+.week-list .dow + .label ~ .label {
+  flex-basis: 100%;
+  padding-left: 7em;
+}
+.week-list .label + .label::before {
+  content: none;
+}
+
+.week-list .label.empty {
+  color: #555;
+}
+
+.middle {
+  display: grid;
+  grid-template-columns: 2fr 2fr;
+  gap: 6px;
+}
+
+.countdowns .panel-title,
+.weather .panel-title,
+.checklist .panel-title {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.cards {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+
+  /* Scrolls horizontally once the tiles no longer fit. A partially visible tile at
+     the right edge is the affordance — it shows there is more without needing a
+     scrollbar, which would be visual noise on a wall display. */
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.cards::-webkit-scrollbar { display: none; }
+
+.card {
+  /* Grows to fill the row when there are few countdowns, but never shrinks below a
+     legible width — which is what makes the row overflow, and therefore scroll,
+     once there are many. */
+  flex: 1 0 150px;
+  scroll-snap-align: start;
+  background: #222733;
+  border-radius: 10px;
+  padding: 6px 8px 4px;
+  text-align: center;
+}
+
+.card-label {
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.card-days {
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.card-sub {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  margin-bottom: 0;
+}
+
+.weather-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.weather-day {
+  text-align: center;
+  background: #1e222c;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  padding: 8px 4px 10px;
+}
+
+.weather-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.weather-icon {
+  width: 110px;
+  height: 110px;
+  display: block;
+  margin: 4px auto 6px;
+}
+
+.weather-icon svg,
+.weather-icon img,
+.weather-icon object {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.25));
+  pointer-events: none;
+}
+
+.weather-icon-inner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.weather-icon-inner svg,
+.weather-icon-inner {
+  width: 100%;
+  height: 100%;
+}
+
+img.weather-icon-inner,
+object.weather-icon-inner {
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.weather-temp {
+  font-size: 1.15rem;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.weather-desc {
+  font-size: 0.95rem;
+  /* Dimmed via the text colour rather than `opacity`, which would apply to the whole
+     element as a group and drag the AQI chip's band colour down with it — a washed-out
+     green is exactly what the chip must not be. Same rendered result for the text:
+     the inherited #f2f4f8 at 85%. */
+  color: rgba(242, 244, 248, 0.85);
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.checklist ul {
+  list-style: none;
+  margin-top: 4px;
+  padding-left: 0;
+}
+
+.checklist li {
+  margin-top: 2px;
+}
+
+.footer {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.today-date-small {
+  font-size: 1.1rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+#current-datetime {
+  text-decoration: none;
+}
+
+
+@media (orientation: portrait) {
+  #app {
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .header,
+  .middle {
+    grid-template-columns: 1fr;
+  }
+}
+
+#daily-checks li {
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1.8;
+  transition: color 0.15s ease;
+}
+
+#daily-checks li.checked {
+  color: #4DD0E1;
+}
+
+#daily-checks li.pulse-reminder {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    text-shadow: 0 0 5px transparent;
+  }
+  50% {
+    text-shadow: 0 0 15px #4DD0E1, 0 0 25px #4DD0E1, 0 0 35px #4DD0E1;
+  }
+}
+
+.card.pulse-countdown {
+  animation: cardPulse 2s ease-in-out infinite;
+}
+
+@keyframes cardPulse {
+  0%, 100% {
+    box-shadow: 0 0 5px transparent;
+  }
+  50% {
+    box-shadow: 0 0 12px #4DD0E1, 0 0 24px #4DD0E1;
+  }
+}
+
+/* Weather detail popup */
+.weather-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.weather-popup-card {
+  background: #1e222c;
+  border: 1px solid #2a2f3a;
+  border-radius: 16px;
+  padding: 28px 32px 24px;
+  max-width: 800px;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.weather-popup-close {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  font-size: 2rem;
+  cursor: pointer;
+  opacity: 0.6;
+  line-height: 1;
+}
+
+.weather-popup-close:hover {
+  opacity: 1;
+}
+
+/* Horizontal two-column layout */
+.weather-popup-body {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.weather-popup-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.weather-popup-left .popup-icon {
+  width: 140px;
+  height: 140px;
+  display: block;
+}
+
+.weather-popup-left .popup-icon svg,
+.weather-popup-left .popup-icon img,
+.weather-popup-left .popup-icon object {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.25));
+}
+
+.weather-popup-left .popup-temp {
+  font-size: 3.2rem;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.weather-popup-left .popup-desc {
+  font-size: 1.25rem;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+.weather-popup-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.weather-popup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.weather-popup-item {
+  background: #262b38;
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+}
+
+.weather-popup-item .popup-item-label {
+  font-size: 1rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 5px;
+}
+
+.weather-popup-item .popup-item-value {
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+/* Which station the AQI came from. Deliberately quiet — it is provenance you check,
+   not something to read from across the kitchen. */
+.weather-popup-item .popup-item-note {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  margin-top: 3px;
+  line-height: 1.25;
+}
+
+.weather-popup-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.weather-popup-footer-tile {
+  background: #262b38;
+  border-radius: 10px;
+  padding: 10px 8px 12px;
+  text-align: center;
+}
+
+.footer-tile-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 4px;
+  display: block;
+}
+
+.footer-tile-icon svg,
+.footer-tile-icon img {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+}
+
+.footer-tile-label {
+  font-size: 0.9rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.footer-tile-value {
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.weather-day.now-tile {
+  cursor: pointer;
+}
+
+.weather-day.now-tile:active {
+  background: #262b38;
+}
+
+/* Portrait popup (iPhone PWA) */
+@media (orientation: portrait) {
+  .weather-popup-card {
+    max-width: 100%;
+    padding: 20px 16px 16px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .weather-popup-body {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .weather-popup-left {
+    min-width: unset;
+  }
+
+  .weather-popup-left .popup-icon {
+    width: 100px;
+    height: 100px;
+  }
+
+  .weather-popup-left .popup-temp {
+    font-size: 2.4rem;
+  }
+
+  .weather-popup-left .popup-desc {
+    font-size: 1.1rem;
+  }
+
+  .weather-popup-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .weather-popup-item {
+    padding: 10px 8px;
+  }
+
+  .weather-popup-item .popup-item-value {
+    font-size: 1.2rem;
+  }
+
+  .weather-popup-footer {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .footer-tile-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .footer-tile-value {
+    font-size: 1.1rem;
+  }
+}
+
+
+/* Weather popup timestamp footnote */
+.weather-popup-timestamp {
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.45;
+  margin-top: 14px;
+  letter-spacing: 0.02em;
+}
+
+/* Source credit for the air quality data, required by WAQI's terms of use. */
+.weather-popup-attribution {
+  text-align: center;
+  font-size: 0.75rem;
+  opacity: 0.35;
+  margin-top: 6px;
+  line-height: 1.3;
+}
+
+/* Event detail popup */
+.event-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.event-popup-card {
+  background: #1e222c;
+  border: 1px solid #2a2f3a;
+  border-radius: 16px;
+  padding: 28px 32px 24px;
+  max-width: 600px;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.event-popup-close {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  font-size: 2rem;
+  cursor: pointer;
+  opacity: 0.6;
+  line-height: 1;
+}
+
+.event-popup-close:hover {
+  opacity: 1;
+}
+
+.event-popup-title {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-right: 30px;
+}
+
+.event-popup-time {
+  font-size: 1.25rem;
+  opacity: 0.8;
+  margin-bottom: 18px;
+}
+
+.event-popup-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-popup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.event-popup-field-label {
+  font-size: 0.9rem;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.event-popup-field-value {
+  font-size: 1.15rem;
+}
+
+.event-popup-body-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.event-popup-body-text a {
+  color: #6cb4ee;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.event-popup-countdown-big {
+  font-size: 4rem;
+  font-weight: 700;
+  text-align: center;
+  margin-top: 16px;
+}
+
+.event-popup-countdown-big span {
+  font-size: 1.5rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* Clickable event items */
+.today-events li[style*="cursor"] {
+  transition: opacity 0.15s ease;
+}
+
+.today-events li:active,
+.week-list .label:active {
+  opacity: 0.6;
+}
+
+@media (orientation: portrait) {
+  .event-popup-card {
+    max-width: 100%;
+    padding: 20px 16px 16px;
+  }
+
+  .event-popup-title {
+    font-size: 1.6rem;
+  }
+
+  .event-popup-time {
+    font-size: 1.1rem;
+  }
+}

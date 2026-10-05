@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kitchen Dashboard</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- iOS Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kitchen" />
+
+  <!-- iOS Icons -->
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
+
+  <!-- Android Theme Color -->
+  <meta name="theme-color" content="#1a1f2e" />
+
+  <!-- Cache control for Fully Kiosk / aggressive WebViews -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <link rel="stylesheet" href="style.css?v=36" />
+  <link rel="stylesheet" href="styles-location.css?v=8">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="weather">
+        <div class="panel-title">
+          <span id="current-datetime">Loading...</span>
+        </div>
+        <div class="weather-grid" id="weather-grid">
+          <div class="weather-day">
+            <div class="weather-label">Loading...</div>
+            <div class="weather-icon"></div>
+            <div class="weather-temp">--° / --°</div>
+            <div class="weather-desc">--</div>
+          </div>
+        </div>
+      </div>
+      <div class="checklist">
+        <div class="panel-title">Daily Checks</div>
+        <ul id="daily-checks">
+          <!-- CUSTOMIZE: one <li> per chore. data-key must be unique; data-dow
+               (0=Sun … 6=Sat) shows the item only on that weekday. -->
+          <li data-key="feed-pet-am">☐ Feed the pet – Breakfast</li>
+          <li data-key="water-plants" data-dow="6">☐ Water Plants</li>
+          <li data-key="trash-bins" data-dow="0">☐ Trash Bins</li>
+          <li data-key="feed-pet-pm">☐ Feed the pet – Dinner</li>
+          <li data-key="clean-kitchen">☐ Clean the kitchen</li>
+        </ul>
+      </div>
+    </header>
+
+    <section class="middle">
+      <div class="today">
+        <div class="today-title">Today</div>
+        <ul class="today-events" id="today-events">
+          <li>loading…</li>
+        </ul>
+        <div class="today-title" id="tomorrow-title" style="margin-top: 4px;">Tomorrow</div>
+        <ul class="today-events" id="tomorrow-events">
+          <li>loading…</li>
+        </ul>
+      </div>
+      <div class="week">
+        <div class="week-title">Upcoming</div>
+        <ul class="week-list" id="upcoming-events">
+          <li>loading…</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="countdowns">
+        <div class="panel-title">Countdowns</div>
+        <div class="cards" id="countdown-cards"></div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Event detail popup -->
+  <div id="event-popup" class="event-popup-overlay" style="display:none">
+    <div class="event-popup-card">
+      <div class="event-popup-close" id="event-popup-close">&times;</div>
+      <div id="event-popup-content"></div>
+    </div>
+  </div>
+
+  <!-- Weather detail popup -->
+  <div id="weather-popup" class="weather-popup-overlay" style="display:none">
+    <div class="weather-popup-card">
+      <div class="weather-popup-close" id="weather-popup-close">&times;</div>
+      <div id="weather-popup-content"></div>
+    </div>
+  </div>
+
+  <div id="location-popup" class="weather-popup-overlay" style="display:none">
+    <div class="weather-popup-card location-card">
+      <div class="weather-popup-close" id="location-popup-close">&times;</div>
+      <h3 class="location-title">Weather location</h3>
+      <input id="location-search" class="location-input" type="search"
+             placeholder="Search for a city…" autocomplete="off" />
+      <div id="location-results" class="location-results"></div>
+    </div>
+  </div>
+
+  <script>
+    // Set current date/time in weather header
+    (function () {
+      function updateDateTime() {
+        const now = new Date();
+        const dateOpts = { weekday: 'long', month: 'short', day: 'numeric' };
+        const timeOpts = { hour: 'numeric', minute: '2-digit' };
+        const dateStr = now.toLocaleDateString(undefined, dateOpts);
+        const timeStr = now.toLocaleTimeString(undefined, timeOpts);
+        
+        const el = document.getElementById('current-datetime');
+        if (el) el.textContent = dateStr + ', ' + timeStr;
+      }
+      
+      updateDateTime();
+      // Update time every minute
+      setInterval(updateDateTime, 60 * 1000);
+    })();
+
+    // Daily checklist toggle + daily reset at ~2am
+    (function () {
+      const list = document.getElementById('daily-checks');
+      if (!list) return;
+
+      const STORAGE_KEY = 'kitchen-dash.daily-checks';
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          return raw ? JSON.parse(raw) : { date: null, items: {} };
+        } catch {
+          return { date: null, items: {} };
+        }
+      }
+
+      function saveState(state) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch {}
+      }
+
+      function isSameDay(a, b) {
+        return a.getFullYear() === b.getFullYear() &&
+               a.getMonth() === b.getMonth() &&
+               a.getDate() === b.getDate();
+      }
+
+      function shouldReset(lastDate, now) {
+        if (!lastDate) return true;
+        const last = new Date(lastDate);
+        if (!isSameDay(last, now)) return true;
+        if (now.getHours() >= 2 && last.getHours() < 2) return true;
+        return false;
+      }
+
+      let state = loadState();
+      const now = new Date();
+
+      if (shouldReset(state.date ? new Date(state.date) : null, now)) {
+        state = { date: now.toISOString(), items: {} };
+        saveState(state);
+      }
+
+      // Hide day-of-week specific items that don't match today
+      const todayDow = new Date().getDay(); // 0=Sun, 6=Sat
+      Array.from(list.querySelectorAll('li[data-dow]')).forEach(li => {
+        li.style.display = (li.getAttribute('data-dow') === String(todayDow)) ? '' : 'none';
+      });
+
+      // Apply state to list
+      Array.from(list.querySelectorAll('li[data-key]')).forEach(li => {
+        const key = li.getAttribute('data-key');
+        const checked = !!state.items[key];
+        const label = li.textContent.replace(/^☐ |^☑ /, '').trim();
+        li.textContent = (checked ? '☑ ' : '☐ ') + label;
+        li.classList.toggle('checked', checked);
+      });
+
+      list.addEventListener('click', (e) => {
+        const li = e.target.closest('li[data-key]');
+        if (!li) return;
+        const key = li.getAttribute('data-key');
+        const current = !!state.items[key];
+        const newChecked = !current;
+        state.items[key] = newChecked;
+        state.date = new Date().toISOString();
+        const label = li.textContent.replace(/^☐ |^☑ /, '').trim();
+        li.textContent = (newChecked ? '☑ ' : '☐ ') + label;
+        li.classList.toggle('checked', newChecked);
+        li.classList.remove('pulse-reminder'); // Stop pulsing when checked
+
+        // Play ding sound when checking a box
+        if (newChecked && window.playCheckboxDing) {
+          try { window.playCheckboxDing(); } catch(e) { /* audio error should not block UI */ }
+        }
+
+        saveState(state);
+      });
+
+      // Reminder pulses: an unchecked item starts pulsing after its time of day.
+      // CUSTOMIZE: keys must match data-key values in the checklist above.
+      function checkFeedingReminders() {
+        const now = new Date();
+        const hour = now.getHours();
+        const min = now.getMinutes();
+        const timeVal = hour + min / 60;
+
+        const breakfastLi = list.querySelector('[data-key="feed-pet-am"]');
+        const dinnerLi = list.querySelector('[data-key="feed-pet-pm"]');
+
+        // Breakfast: pulse starting at 8:00 AM if unchecked
+        if (breakfastLi && !state.items['feed-pet-am']) {
+          if (timeVal >= 8) {
+            breakfastLi.classList.add('pulse-reminder');
+          } else {
+            breakfastLi.classList.remove('pulse-reminder');
+          }
+        }
+
+        // Dinner: pulse starting at 6:00 PM (18:00) if unchecked
+        if (dinnerLi && !state.items['feed-pet-pm']) {
+          if (timeVal >= 18) {
+            dinnerLi.classList.add('pulse-reminder');
+          } else {
+            dinnerLi.classList.remove('pulse-reminder');
+          }
+        }
+
+
+        // Water plants: pulse starting at 1:00 PM (13:00) if unchecked
+        const plantsLi = list.querySelector('[data-key="water-plants"]');
+        if (plantsLi && !state.items['water-plants']) {
+          if (timeVal >= 13) {
+            plantsLi.classList.add('pulse-reminder');
+          } else {
+            plantsLi.classList.remove('pulse-reminder');
+          }
+        }
+
+        // Trash bins: pulse starting at 5:00 PM (17:00) if unchecked
+        const trashLi = list.querySelector('[data-key="trash-bins"]');
+        if (trashLi && !state.items['trash-bins']) {
+          if (timeVal >= 17) {
+            trashLi.classList.add('pulse-reminder');
+          } else {
+            trashLi.classList.remove('pulse-reminder');
+          }
+        }
+        // Clean kitchen: pulse starting at 9:00 PM (21:00) if unchecked
+        const kitchenLi = list.querySelector('[data-key="clean-kitchen"]');
+        if (kitchenLi && !state.items['clean-kitchen']) {
+          if (timeVal >= 21) {
+            kitchenLi.classList.add('pulse-reminder');
+          } else {
+            kitchenLi.classList.remove('pulse-reminder');
+          }
+        }
+      }
+
+      checkFeedingReminders();
+      setInterval(checkFeedingReminders, 60 * 1000); // Check every minute
+    })();
+
+    // Warm sonar chime using Web Audio API
+    (function() {
+      let audioCtx = null;
+
+      function playWarmPing(freq = 600, startTime = 0) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+
+        // Warm envelope: soft attack, gentle decay
+        const now = audioCtx.currentTime + startTime;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.3, now + 0.05);  // soft attack
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6); // gentle decay
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.7);
+      }
+
+      function playChimeSet(startOffset = 0) {
+        // Three warm pings, slightly descending for pleasant feel
+        playWarmPing(680, startOffset);
+        playWarmPing(600, startOffset + 0.4);
+        playWarmPing(540, startOffset + 0.8);
+      }
+
+      function playChime() {
+        // Three sets of three pings
+        playChimeSet(0);
+        playChimeSet(1.5);
+        playChimeSet(3.0);
+      }
+
+      function playCheckboxDing() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+
+        // -- Short room reverb (convolver with synthetic IR) --
+        var convolver = audioCtx.createConvolver();
+        var irLen = audioCtx.sampleRate * 0.18; // 180ms impulse response
+        var irBuf = audioCtx.createBuffer(2, irLen, audioCtx.sampleRate);
+        for (var ch = 0; ch < 2; ch++) {
+          var irData = irBuf.getChannelData(ch);
+          for (var i = 0; i < irLen; i++) {
+            irData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.5);
+          }
+        }
+        convolver.buffer = irBuf;
+
+        // Dry/wet mix (~8% reverb)
+        var dry = audioCtx.createGain();
+        var wet = audioCtx.createGain();
+        dry.gain.value = 0.92;
+        wet.gain.value = 0.08;
+        convolver.connect(wet);
+
+        // -- Primary partial: ~1350 Hz with subtle +15 cent pitch settle --
+        var osc1 = audioCtx.createOscillator();
+        var g1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(1361.7, now); // +15 cents
+        osc1.frequency.exponentialRampToValueAtTime(1350, now + 0.015); // settle in 15ms
+
+        g1.gain.setValueAtTime(0, now);
+        g1.gain.linearRampToValueAtTime(0.30, now + 0.008); // 8ms attack
+        g1.gain.setTargetAtTime(0, now + 0.008, 0.12); // ~360ms tail (3x time constant)
+
+        osc1.connect(g1);
+        g1.connect(dry);
+        g1.connect(convolver);
+
+        // -- Secondary partial: ~2700 Hz at -15 dB --
+        var osc2 = audioCtx.createOscillator();
+        var g2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(2723.4, now);
+        osc2.frequency.exponentialRampToValueAtTime(2700, now + 0.015);
+
+        g2.gain.setValueAtTime(0, now);
+        g2.gain.linearRampToValueAtTime(0.05, now + 0.006);
+        g2.gain.setTargetAtTime(0, now + 0.006, 0.08); // shorter tail for overtone
+
+        osc2.connect(g2);
+        g2.connect(dry);
+        g2.connect(convolver);
+
+        dry.connect(audioCtx.destination);
+        wet.connect(audioCtx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.5);
+        osc2.stop(now + 0.35);
+      }
+
+      // Expose globally for event reminders and checkbox clicks
+      window.playReminderChime = playChime;
+      window.playCheckboxDing = playCheckboxDing;
+    })();
+  </script>
+  <script src="location.js?v=1"></script>
+  <script src="weather.js?v=4"></script>
+  <script src="data.js?v=1"></script>
+  <script src="location-ui.js?v=1"></script>
+  <script src="app.js?v=40"></script>
+  <button id="location-button" class="location-button" title="Change weather location">📍</button>
+</body>
+</html>

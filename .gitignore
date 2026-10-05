@@ -1,0 +1,9 @@
+node_modules/
+
+# Secrets. .env.example is the template and MUST travel with the repo.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

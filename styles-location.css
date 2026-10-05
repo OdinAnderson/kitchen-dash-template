@@ -1,0 +1,192 @@
+/* Location picker — deliberately unobtrusive. The wall screen never moves, so this
+   is a rarely-used control that must not compete with the calendar for attention.
+   Colours are inherited rather than declared, so it sits inside style.css's palette
+   instead of introducing a second one. */
+.location-button {
+  position: fixed; bottom: 12px; right: 12px; z-index: 40;
+  background: rgba(0,0,0,.35); color: #fff;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
+  font-size: 18px; line-height: 1; padding: 8px 12px; cursor: pointer;
+  opacity: .35; transition: opacity .2s ease;
+}
+.location-button:hover, .location-button:focus-visible { opacity: 1; outline: none; }
+
+.location-card { min-width: min(420px, 88vw); }
+.location-title { margin: 0 0 12px; font-size: 1.05rem; }
+
+.location-input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.06); color: inherit; font-size: 1rem;
+}
+.location-input:focus-visible { outline: 2px solid rgba(255,255,255,.5); outline-offset: 1px; }
+
+.location-results { margin-top: 10px; max-height: 46vh; overflow-y: auto; }
+
+.location-result {
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
+  text-align: left; padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+  background: rgba(255,255,255,.05); color: inherit;
+  border: 1px solid transparent; border-radius: 8px; font: inherit;
+}
+.location-result:hover, .location-result:focus-visible {
+  background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.25); outline: none;
+}
+.location-name { font-size: 1rem; }
+/* Region, country and timezone are shown because "Springfield" is several real places. */
+.location-meta { font-size: .8rem; opacity: .65; }
+.location-empty { padding: 12px; opacity: .6; font-size: .9rem; }
+
+/* --- Weather sub-tiles ------------------------------------------------------
+   Colour lives behind the ICON, not behind the tile. Tinting the whole tile meant
+   every shade had to stay dark enough for white body text, which capped it at
+   "slightly less grey" — legible but not worth looking at. Nothing sits on top of
+   the icon, so this backdrop can be properly saturated and actually read as
+   weather from across the kitchen.
+
+   The tile itself returns to the original flat panel, so temperature and
+   description keep the contrast they had. */
+.weather-day.sky-clear,
+.weather-day.sky-partly,
+.weather-day.sky-cloud,
+.weather-day.sky-rain,
+.weather-day.sky-snow,
+.weather-day.sky-fog,
+.weather-day.sky-storm,
+.weather-day.sky-night { background: #1e222c; border-color: #2a2f3a; }
+
+/* The sub-tile. Inset slightly so it reads as a panel behind the art rather than
+   a border around it, and the icon keeps its own transparent margin. */
+.weather-day .weather-icon {
+  border-radius: 14px;
+  background: var(--sky, #262b36);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 2px 6px -2px rgba(0,0,0,.55);
+  padding: 4px;
+  box-sizing: border-box;
+  transition: background .6s ease;
+}
+
+/* The icon art is colourful and includes white clouds and yellow suns, which would
+   otherwise disappear into the paler backdrops (snow, clear). A drop-shadow gives
+   every icon an edge against whatever sits behind it, which is what lets the
+   backdrops stay saturated instead of being darkened until nothing clashes. */
+.weather-day .weather-icon-inner {
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.5));
+}
+
+/* Saturated on purpose — this is the one place on the dashboard where colour can
+   carry meaning without fighting text. Each is a two-stop gradient reading
+   sky-above / ground-below, so the shape suggests weather even before the icon
+   registers. */
+.weather-day.sky-clear  { --sky: linear-gradient(165deg,#f6b93b 0%,#e0704a 100%); }
+.weather-day.sky-partly { --sky: linear-gradient(165deg,#6fa8dc 0%,#8e9fbf 100%); }
+.weather-day.sky-cloud  { --sky: linear-gradient(165deg,#8a93a3 0%,#5b6373 100%); }
+.weather-day.sky-rain   { --sky: linear-gradient(165deg,#4a80a8 0%,#2b4a63 100%); }
+.weather-day.sky-snow   { --sky: linear-gradient(165deg,#b9d3e6 0%,#7d95ab 100%); }
+.weather-day.sky-fog    { --sky: linear-gradient(165deg,#a7a9ae 0%,#6f737c 100%); }
+.weather-day.sky-storm  { --sky: linear-gradient(165deg,#6b5ca5 0%,#33305c 100%); }
+.weather-day.sky-night  { --sky: linear-gradient(165deg,#3b4a7a 0%,#1e2440 100%); }
+
+/* --- Air quality ------------------------------------------------------------
+   Drawn only at AQI 50+. "Good" is the normal state, and a badge that is always
+   there stops being seen — the tile changing is what carries the signal.
+   The whole tile is ringed in the EPA band colour rather than showing a bar,
+   so it reads as a state change from across the room rather than a detail to
+   go and inspect. */
+.weather-day.aqi-alert {
+  border: 2px solid var(--aqi, #666);
+  padding: 7px 3px 9px; /* absorb the extra border so the tile does not grow */
+  /* The glow spills past the tile into the grid gap. Siblings paint later and have
+     opaque backgrounds, so without a stacking context the halo is half-covered by
+     the tile to its right. */
+  position: relative;
+  z-index: 2;
+  /* An always-on base glow, independent of the animation. The pulse can be
+     throttled or disabled by the device; the signal must not depend on it. */
+  box-shadow: 0 0 0 1px var(--aqi, #666) inset, 0 0 12px 1px var(--aqi, #666);
+}
+
+/* The breath is a separate layer whose OPACITY animates, never its box-shadow.
+   Animating box-shadow repaints the tile every frame — on the kitchen Fire's
+   WebView (and with Fully Kiosk hardware acceleration off) that gets throttled
+   until the glow never visibly reaches its bright phase, which is why the wall
+   display looked flat next to the phone. Opacity animates on the compositor, so
+   the same effect survives a slow device. */
+.weather-day.aqi-alert::after {
+  content: '';
+  position: absolute;
+  /* Explicit offsets rather than the `inset` shorthand: that needs Chrome 87+, and
+     the entire reason this layer exists is to survive the Fire's older WebView. */
+  top: -2px; right: -2px; bottom: -2px; left: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 26px 7px var(--aqi, #666);
+  opacity: 0.35;
+  animation: aqi-breathe 2.8s ease-in-out infinite;
+  will-change: opacity;
+}
+
+/* A slow breath, not a blink. This runs on a wall display all day and all night —
+   a fast or high-contrast flash would be the most annoying thing in the kitchen,
+   and something people learn to ignore, which defeats the point. */
+@keyframes aqi-breathe {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* Anyone who has asked the system for less motion gets the ring without the breath.
+   Held near the animation's PEAK, not below its trough — the earlier value here was
+   dimmer than any frame of the pulse, so a device that reduces motion (battery saver
+   and "remove animations" both do it on Fire tablets) silently got the weakest glow
+   of all. */
+@media (prefers-reduced-motion: reduce) {
+  .weather-day.aqi-alert::after {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+.weather-aqi {
+  display: flex; align-items: baseline; justify-content: center; gap: 5px;
+  margin-top: 5px; line-height: 1.2;
+  /* Filled with the EPA band colour, alongside the ring. Each band ships a paired
+     ink because yellow needs dark text and red needs light — a single fixed text
+     colour would leave half the bands unreadable. */
+  background: var(--aqi, #333);
+  color: var(--aqi-ink, #fff);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.weather-aqi .aqi-num {
+  font-size: .78rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: inherit; /* the paired ink, not the band colour — that is the background now */
+}
+/* The band name is what people act on, but it must not push the tile around —
+   it truncates rather than wrapping. */
+.weather-aqi .aqi-label {
+  font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; opacity: .8;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 11ch;
+}
+/* The always-on reading on the Now tile's description line. Same band colour and paired
+   ink as the alert badge, so "green" means the same thing everywhere on the screen.
+   Carries no band name: at this size the colour is the label, and the word would push
+   the line to wrap on the narrow tablet layout. */
+.aqi-chip {
+  display: inline-block;
+  background: var(--aqi, #333);
+  color: var(--aqi-ink, #fff);
+  border-radius: 5px;
+  padding: 0 5px;
+  /* Its own spacing rather than a "·" in the text, so that when the description wraps
+     the chip moves to the next line whole instead of leaving a separator behind. */
+  margin-left: 0.15em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  /* Never split "AQI" from its number across lines. */
+  white-space: nowrap;
+}
+
+.aqi-dot {
+  display: inline-block; width: .62em; height: .62em; border-radius: 50%;
+  margin-right: .4em; vertical-align: baseline;
+}

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kitchen Dash — render diagnostic</title>
+<style>
+  body {
+    margin: 0; padding: 16px;
+    background: #141821; color: #e8ecf4;
+    font: 15px/1.45 system-ui, -apple-system, Roboto, sans-serif;
+  }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  .sub { opacity: .6; font-size: .85rem; margin-bottom: 16px; }
+  section { margin-bottom: 18px; }
+  h2 { font-size: .95rem; margin: 0 0 6px; opacity: .8; text-transform: uppercase; letter-spacing: .05em; }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid #262c38; }
+  .k { opacity: .75; }
+  .v { font-weight: 700; text-align: right; word-break: break-word; }
+  .ok { color: #46d17a; }
+  .bad { color: #ff6b6b; }
+  .ua { font-size: .78rem; opacity: .8; word-break: break-all; background: #1b202a; padding: 8px; border-radius: 6px; }
+  .verdict { padding: 12px; border-radius: 8px; background: #1b202a; border-left: 4px solid #666; margin-top: 6px; }
+
+  /* An exact copy of the dashboard's live AQI rules, so what renders here is what
+     renders there — not an approximation that could pass while the real one fails. */
+  .demo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+  .tile {
+    text-align: center; background: #1e222c; border: 1px solid #2a2f3a;
+    border-radius: 10px; padding: 8px 4px 10px; font-size: .8rem;
+  }
+  .tile.aqi-alert {
+    --aqi: #FFFF00; --aqi-ink: #2b2b00;
+    border: 2px solid var(--aqi); padding: 7px 3px 9px;
+    position: relative; z-index: 2;
+    box-shadow: 0 0 0 1px var(--aqi) inset, 0 0 12px 1px var(--aqi);
+  }
+  .tile.aqi-alert::after {
+    content: ''; position: absolute;
+    top: -2px; right: -2px; bottom: -2px; left: -2px;
+    border-radius: inherit; pointer-events: none;
+    box-shadow: 0 0 26px 7px var(--aqi);
+    opacity: .35; animation: aqi-breathe 2.8s ease-in-out infinite;
+    will-change: opacity;
+  }
+  @keyframes aqi-breathe { 0%,100% { opacity:.35 } 50% { opacity:1 } }
+
+  /* A static reference: no animation at all. If this one glows and the animated
+     one does not, the problem is the animation, not box-shadow itself. */
+  .tile.static-glow {
+    --aqi: #00E5FF;
+    border: 2px solid var(--aqi); padding: 7px 3px 9px;
+    box-shadow: 0 0 26px 7px var(--aqi);
+  }
+  /* A third reference using text-shadow, which is what the checklist pulse uses —
+     that one is known to work in Fully Kiosk. */
+  .tile.text-glow { color: #4DD0E1; animation: textPulse 2s ease-in-out infinite; }
+  @keyframes textPulse {
+    0%,100% { text-shadow: 0 0 5px transparent; }
+    50% { text-shadow: 0 0 15px #4DD0E1, 0 0 25px #4DD0E1, 0 0 35px #4DD0E1; }
+  }
+</style>
+</head>
+<body>
+<h1>Kitchen Dash — render diagnostic</h1>
+<div class="sub">Open this in Fully Kiosk, then in Silk, and compare.</div>
+
+<section>
+  <h2>Which tiles glow?</h2>
+  <div class="demo-grid">
+    <div class="tile aqi-alert">Animated<br>box-shadow<br>(the real one)</div>
+    <div class="tile static-glow">Static<br>box-shadow<br>(no animation)</div>
+    <div class="tile text-glow">Animated<br>text-shadow<br>(known good)</div>
+  </div>
+</section>
+
+<section>
+  <h2>Engine</h2>
+  <div id="engine"></div>
+  <div class="ua" id="ua"></div>
+</section>
+
+<section>
+  <h2>Feature support</h2>
+  <div id="features"></div>
+</section>
+
+<section>
+  <h2>Is the animation actually running?</h2>
+  <div id="anim"></div>
+  <div class="verdict" id="verdict">Sampling for 3 seconds…</div>
+</section>
+
+<script>
+(function () {
+  function row(k, v, cls) {
+    return '<div class="row"><span class="k">' + k + '</span>' +
+           '<span class="v ' + (cls || '') + '">' + v + '</span></div>';
+  }
+  function yn(b) { return b ? '<span class="ok">yes</span>' : '<span class="bad">NO</span>'; }
+
+  var ua = navigator.userAgent;
+  document.getElementById('ua').textContent = ua;
+
+  // The Chromium version is the number that matters: Silk and Firefox ship their own
+  // engine, while Fully Kiosk renders through the Android System WebView, which Amazon
+  // updates rarely. A large gap between the two is the whole explanation.
+  var chrome = (ua.match(/Chrome\/(\d+)/) || [])[1];
+  var isWebView = /; wv\)/.test(ua) || /Version\/\d+\.\d+ Chrome/.test(ua);
+  var engine = '';
+  engine += row('Chromium version', chrome ? chrome : 'not Chromium (Gecko/other)');
+  engine += row('Android WebView?', isWebView ? '<span class="bad">yes — system WebView</span>'
+                                             : '<span class="ok">no — full browser</span>');
+  engine += row('Device pixel ratio', window.devicePixelRatio);
+  engine += row('prefers-reduced-motion',
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? '<span class="bad">REDUCE (animations suppressed)</span>'
+      : '<span class="ok">no-preference</span>');
+  document.getElementById('engine').innerHTML = engine;
+
+  var f = '';
+  f += row('CSS variables', yn(window.CSS && CSS.supports && CSS.supports('--a', '0')));
+  f += row('box-shadow spread', yn(CSS.supports('box-shadow', '0 0 26px 7px red')));
+  f += row('inset shorthand', yn(CSS.supports('inset', '-2px')));
+  f += row('will-change', yn(CSS.supports('will-change', 'opacity')));
+  f += row('filter: drop-shadow', yn(CSS.supports('filter', 'drop-shadow(0 0 3px red)')));
+  document.getElementById('features').innerHTML = f;
+
+  // Sample the real animated layer's opacity over time. If min and max come back
+  // identical, the keyframes are not advancing -- which distinguishes "throttled or
+  // disabled animation" from "box-shadow not painting at all".
+  var el = document.querySelector('.tile.aqi-alert');
+  var min = 1, max = 0, samples = 0, supported = true;
+  var timer = setInterval(function () {
+    var cs;
+    try { cs = getComputedStyle(el, '::after'); } catch (e) { supported = false; }
+    if (!cs) { supported = false; }
+    else {
+      var o = parseFloat(cs.opacity);
+      if (!isNaN(o)) { min = Math.min(min, o); max = Math.max(max, o); samples++; }
+    }
+  }, 100);
+
+  setTimeout(function () {
+    clearInterval(timer);
+    var out = '';
+    if (!supported || samples === 0) {
+      out += row('pseudo-element readable', '<span class="bad">no</span>');
+      document.getElementById('verdict').innerHTML =
+        'Could not read the ::after layer — this engine does not expose pseudo-element ' +
+        'styles. Judge by eye from the three tiles above instead.';
+    } else {
+      out += row('samples', samples);
+      out += row('opacity min', min.toFixed(2));
+      out += row('opacity max', max.toFixed(2));
+      var moving = (max - min) > 0.1;
+      out += row('animating', yn(moving));
+      document.getElementById('verdict').innerHTML = moving
+        ? 'The animation IS running here. If the glow still looks flat, the issue is ' +
+          'box-shadow <em>painting</em>, not the animation — most likely software ' +
+          'rendering with hardware acceleration off.'
+        : 'The animation is NOT advancing here. The glow is stuck at one opacity, so ' +
+          'this engine is suppressing or throttling the keyframes.';
+    }
+    document.getElementById('anim').innerHTML = out;
+  }, 3000);
+})();
+</script>
+</body>
+</html>

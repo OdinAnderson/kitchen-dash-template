@@ -1,0 +1,32 @@
+[Unit]
+Description=Kitchen dashboard (static UI + scoped Graph calendar reader)
+Documentation=https://github.com/YOUR-USER/kitchen-dash
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Placeholders: bootstrap.sh rewrites these three paths to match your clone.
+WorkingDirectory=/home/USER/apps/kitchen-dash
+ExecStart=/usr/bin/node /home/USER/apps/kitchen-dash/server.js
+
+# The Graph credential lives in its own file (mode 600), NOT in a shared env file
+# sourced by your shell or other services — anything there is inherited by every
+# process that loads it. This dashboard's credential has no reason to be reachable
+# from anything else. See .env.example for the contents.
+EnvironmentFile=/home/USER/.config/kitchen-dash/env
+Environment=PORT=8788
+
+Restart=on-failure
+RestartSec=10s
+
+# Binds loopback only; Tailscale Serve publishes it to the tailnet.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

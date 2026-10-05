@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Outer circle -->
+  <circle cx="50" cy="50" r="48" fill="#1a1f2e" stroke="#4DD0E1" stroke-width="3"/>
+
+  <!-- Inner circle -->
+  <circle cx="50" cy="50" r="6" fill="#4DD0E1"/>
+
+  <!-- North needle (red) -->
+  <path d="M 50 10 L 45 50 L 50 45 L 55 50 Z" fill="#FF5252"/>
+
+  <!-- South needle (white) -->
+  <path d="M 50 90 L 45 50 L 50 55 L 55 50 Z" fill="#ECEFF1"/>
+
+  <!-- Cardinal direction markers -->
+  <text x="50" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#4DD0E1" font-family="sans-serif">N</text>
+  <text x="78" y="55" text-anchor="middle" font-size="12" fill="#4DD0E1" font-family="sans-serif">E</text>
+  <text x="50" y="88" text-anchor="middle" font-size="12" fill="#4DD0E1" font-family="sans-serif">S</text>
+  <text x="22" y="55" text-anchor="middle" font-size="12" fill="#4DD0E1" font-family="sans-serif">W</text>
+</svg>
